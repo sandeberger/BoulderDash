@@ -238,56 +238,37 @@ export class Renderer {
         ctx.fillStyle = glow;
         ctx.fillRect(x, y, ts, ts);
 
-        // Random glare — each diamond fires at its own interval
-        // Uses a sawtooth wave with a sharp peak for a quick flash
-        const glareInterval = 2500 + phase * 3500; // 2.5–6s between flashes
+        // Random glare — subtle glint on a facet edge
+        const glareInterval = 2500 + phase * 3500; // 2.5–6s between glints
         const glareCycle = ((this.time + phase * 8000) % glareInterval) / glareInterval;
-        // Sharp peak: only visible in the first 12% of cycle
-        const glareRaw = glareCycle < 0.12 ? Math.sin(glareCycle / 0.12 * Math.PI) : 0;
-        const glareIntensity = glareRaw * glareRaw; // square for sharper falloff
+        const glareRaw = glareCycle < 0.08 ? Math.sin(glareCycle / 0.08 * Math.PI) : 0;
+        const glareIntensity = glareRaw * glareRaw;
 
-        // Extra glow burst during glare
-        if (glareIntensity > 0.01) {
-          const burstR = ds * (1.5 + glareIntensity * 2.5);
-          const burst = ctx.createRadialGradient(dx, dy, 0, dx, dy, burstR);
-          burst.addColorStop(0, `rgba(200,240,255,${glareIntensity * 0.6})`);
-          burst.addColorStop(0.4, `rgba(0,238,255,${glareIntensity * 0.3})`);
-          burst.addColorStop(1, 'rgba(0,238,255,0)');
-          ctx.fillStyle = burst;
-          ctx.fillRect(x - ts * 0.5, y - ts * 0.5, ts * 2, ts * 2);
-        }
-
-        // Diamond shape
+        // Diamond shape (unchanged colors — no full brightening)
         ctx.beginPath();
         ctx.moveTo(dx, dy - ds);
         ctx.lineTo(dx + ds, dy);
         ctx.lineTo(dx, dy + ds);
         ctx.lineTo(dx - ds, dy);
         ctx.closePath();
-        const brighten = glareIntensity * 0.4;
         const dGrad = ctx.createLinearGradient(dx - ds, dy - ds, dx + ds, dy + ds);
-        dGrad.addColorStop(0, glareIntensity > 0.1 ? '#ccffff' : '#88ffff');
-        dGrad.addColorStop(0.5, glareIntensity > 0.1 ? '#66ffff' : '#00eeff');
+        dGrad.addColorStop(0, '#88ffff');
+        dGrad.addColorStop(0.5, '#00eeff');
         dGrad.addColorStop(1, '#0088cc');
         ctx.fillStyle = dGrad;
         ctx.fill();
 
-        // White hot-spot during glare (the "star" glint)
+        // Tiny star glint on upper-right facet edge
         if (glareIntensity > 0.05) {
-          const starSize = ts * (0.08 + glareIntensity * 0.25);
-          const starAlpha = glareIntensity;
+          const glintX = dx + ds * 0.35;
+          const glintY = dy - ds * 0.35;
+          const starSize = ts * (0.04 + glareIntensity * 0.12);
           ctx.save();
-          ctx.globalAlpha = starAlpha;
+          ctx.globalAlpha = glareIntensity * 0.9;
           ctx.fillStyle = '#ffffff';
-          // Horizontal ray
-          ctx.fillRect(dx - starSize, dy - 1, starSize * 2, 2);
-          // Vertical ray
-          ctx.fillRect(dx - 1, dy - starSize, 2, starSize * 2);
-          // Diagonal rays (smaller)
-          ctx.translate(dx, dy);
-          ctx.rotate(Math.PI / 4);
-          ctx.fillRect(-starSize * 0.6, -0.5, starSize * 1.2, 1);
-          ctx.fillRect(-0.5, -starSize * 0.6, 1, starSize * 1.2);
+          // Small cross
+          ctx.fillRect(glintX - starSize, glintY - 0.5, starSize * 2, 1);
+          ctx.fillRect(glintX - 0.5, glintY - starSize, 1, starSize * 2);
           ctx.restore();
         }
 
