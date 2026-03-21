@@ -59,6 +59,10 @@ export interface GameState {
   screenShake: number;
   playerDir: Direction;
   playerMoving: boolean;
+  deathTimer: number;      // ms since death, 0 = alive
+  deathType: 'none' | 'crush' | 'enemy' | 'time';
+  deathRow: number;
+  deathCol: number;
 }
 
 export enum Direction {

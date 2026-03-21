@@ -145,7 +145,7 @@ function loop(timestamp: number) {
       if (!s.alive) {
         sound.playDeath();
         appState = 'dead';
-        deadTimer = 1500;
+        deadTimer = s.deathType === 'crush' ? 2000 : 1500;
       }
 
       if (s.won) {

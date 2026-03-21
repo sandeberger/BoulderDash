@@ -61,6 +61,10 @@ export class Engine {
       screenShake: 0,
       playerDir: Direction.DOWN,
       playerMoving: false,
+      deathTimer: 0,
+      deathType: 'none',
+      deathRow: 0,
+      deathCol: 0,
     };
     this.moveTick = 0;
     this.rockTick = 0;
@@ -77,41 +81,27 @@ export class Engine {
 
   update(dt: number) {
     const s = this.state;
-    if (!s.alive || s.won) return;
+
+    // Keep ticking death animation even when dead
+    if (!s.alive) {
+      s.deathTimer += dt;
+      this.updateDeathAnim(dt);
+      // Still update particles and screen shake
+      this.updateParticlesAndShake(dt);
+      return;
+    }
+    if (s.won) return;
 
     // Timer
     s.timeLeft -= dt;
     if (s.timeLeft <= 0) {
       s.timeLeft = 0;
-      this.killPlayer();
+      this.killPlayer('time');
       return;
     }
 
-    // Update animations
-    for (const [key, anim] of s.animations) {
-      anim.progress += dt / ANIM_DURATION;
-      if (anim.progress >= 1) {
-        s.animations.delete(key);
-      }
-    }
-
-    // Update particles
-    for (let i = s.particles.length - 1; i >= 0; i--) {
-      const p = s.particles[i];
-      p.x += p.vx * dt / 16;
-      p.y += p.vy * dt / 16;
-      p.vy += 0.15 * dt / 16; // gravity
-      p.life -= dt;
-      if (p.life <= 0) {
-        s.particles.splice(i, 1);
-      }
-    }
-
-    // Screen shake decay
-    if (s.screenShake > 0) {
-      s.screenShake *= Math.max(0, 1 - dt * 0.008);
-      if (s.screenShake < 0.1) s.screenShake = 0;
-    }
+    // Update animations, particles, screen shake
+    this.updateParticlesAndShake(dt);
 
     // Check exit
     if (!s.exitOpen && s.diamondsCollected >= s.diamondsNeeded) {
@@ -240,7 +230,7 @@ export class Engine {
             // Will hit player next tick
           }
           if (r + 1 === s.playerRow && c === s.playerCol) {
-            this.killPlayer();
+            this.killPlayer('crush');
           }
           // Kill enemies
           if (s.map[r + 2]?.[c] === Tile.SPIDER || s.map[r + 2]?.[c] === Tile.MONSTER) {
@@ -412,15 +402,109 @@ export class Engine {
     // Handled by timeout in explodeAt for diamond cases
   }
 
-  private killPlayer() {
+  private updateParticlesAndShake(dt: number) {
+    const s = this.state;
+
+    // Update animations
+    for (const [key, anim] of s.animations) {
+      anim.progress += dt / ANIM_DURATION;
+      if (anim.progress >= 1) {
+        s.animations.delete(key);
+      }
+    }
+
+    // Update particles
+    for (let i = s.particles.length - 1; i >= 0; i--) {
+      const p = s.particles[i];
+      p.x += p.vx * dt / 16;
+      p.y += p.vy * dt / 16;
+      p.vy += 0.15 * dt / 16;
+      p.life -= dt;
+      if (p.life <= 0) {
+        s.particles.splice(i, 1);
+      }
+    }
+
+    // Screen shake decay
+    if (s.screenShake > 0) {
+      s.screenShake *= Math.max(0, 1 - dt * 0.008);
+      if (s.screenShake < 0.1) s.screenShake = 0;
+    }
+  }
+
+  private updateDeathAnim(dt: number) {
+    const s = this.state;
+    const t = s.deathTimer;
+
+    if (s.deathType === 'crush') {
+      // Phase 1 (0-200ms): Impact flash + small debris
+      if (t < 200 && t - dt <= 0) {
+        // Initial impact — keep screenShake alive
+        s.screenShake = Math.max(s.screenShake, 18);
+      }
+      // Phase 2 (200-500ms): Big particle explosion
+      if (t >= 200 && t - dt < 200) {
+        this.spawnParticles(s.deathCol, s.deathRow, '#ff3300', 25);
+        this.spawnParticles(s.deathCol, s.deathRow, '#ffaa00', 20);
+        this.spawnParticles(s.deathCol, s.deathRow, '#ffdd66', 10);
+        // Bone/helmet fragments — lighter colored
+        this.spawnParticles(s.deathCol, s.deathRow, '#ffdd00', 8);
+        this.spawnParticles(s.deathCol, s.deathRow, '#cccccc', 5);
+        s.screenShake = 12;
+        this.vibrate(80);
+      }
+      // Phase 3 (500-800ms): Smoke
+      if (t >= 500 && t - dt < 500) {
+        this.spawnSmoke(s.deathCol, s.deathRow, 10);
+      }
+    } else if (s.deathType === 'enemy') {
+      // Enemy death — instant explosion
+      if (t >= 100 && t - dt < 100) {
+        this.spawnParticles(s.deathCol, s.deathRow, '#ff0044', 20);
+        this.spawnParticles(s.deathCol, s.deathRow, '#cc00ff', 10);
+        s.screenShake = 10;
+      }
+    }
+  }
+
+  private spawnSmoke(cx: number, cy: number, count: number) {
+    const s = this.state;
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.3 + Math.random() * 0.8;
+      s.particles.push({
+        x: cx + (Math.random() - 0.5) * 0.3,
+        y: cy + (Math.random() - 0.5) * 0.3,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 0.5,
+        life: 600 + Math.random() * 600,
+        maxLife: 1200,
+        color: '#666666',
+        size: 4 + Math.random() * 4,
+      });
+    }
+  }
+
+  private killPlayer(type: 'crush' | 'enemy' | 'time' = 'enemy') {
     const s = this.state;
     if (!s.alive) return;
     s.alive = false;
     s.lives--;
-    s.screenShake = 15;
-    this.spawnParticles(s.playerCol, s.playerRow, '#ff0000', 20);
-    this.spawnParticles(s.playerCol, s.playerRow, '#ffaa00', 15);
-    this.vibrate(100);
+    s.deathTimer = 0;
+    s.deathType = type;
+    s.deathRow = s.playerRow;
+    s.deathCol = s.playerCol;
+    s.screenShake = type === 'crush' ? 20 : 12;
+    this.vibrate(type === 'crush' ? 150 : 100);
+
+    // Delayed particle burst — crush gets a bigger, phased explosion
+    if (type === 'crush') {
+      // Immediate small burst (impact)
+      this.spawnParticles(s.playerCol, s.playerRow, '#ffaa00', 6);
+    } else {
+      this.spawnParticles(s.playerCol, s.playerRow, '#ff0000', 20);
+      this.spawnParticles(s.playerCol, s.playerRow, '#ffaa00', 15);
+    }
   }
 
   private levelComplete() {

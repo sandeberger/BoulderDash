@@ -367,7 +367,11 @@ export class Renderer {
   }
 
   private drawPlayer(ctx: CanvasRenderingContext2D, state: GameState, ts: number) {
-    if (!state.alive) return;
+    // Draw death animation if dead
+    if (!state.alive) {
+      this.drawDeathAnim(ctx, state, ts);
+      return;
+    }
 
     let x = state.playerCol * ts;
     let y = state.playerRow * ts;
@@ -381,25 +385,34 @@ export class Renderer {
       y = anim.fromRow * ts + (anim.toRow - anim.fromRow) * ts * ease;
     }
 
+    this.drawPlayerBody(ctx, x, y, ts, 1, 1, state.playerDir, state.playerMoving, 1);
+  }
+
+  private drawPlayerBody(
+    ctx: CanvasRenderingContext2D,
+    x: number, y: number, ts: number,
+    scaleX: number, scaleY: number,
+    dir: Direction, moving: boolean, alpha: number,
+  ) {
     const cx = x + ts / 2;
     const cy = y + ts / 2;
 
-    // Squash & stretch
-    let scaleX = 1, scaleY = 1;
-    if (state.playerMoving) {
+    let sx = scaleX, sy = scaleY;
+    if (moving && sx === 1 && sy === 1) {
       const stretch = Math.sin(this.time * 0.02) * 0.08;
-      if (state.playerDir === Direction.UP || state.playerDir === Direction.DOWN) {
-        scaleX = 1 - stretch;
-        scaleY = 1 + stretch;
+      if (dir === Direction.UP || dir === Direction.DOWN) {
+        sx = 1 - stretch;
+        sy = 1 + stretch;
       } else {
-        scaleX = 1 + stretch;
-        scaleY = 1 - stretch;
+        sx = 1 + stretch;
+        sy = 1 - stretch;
       }
     }
 
     ctx.save();
+    ctx.globalAlpha = alpha;
     ctx.translate(cx, cy);
-    ctx.scale(scaleX, scaleY);
+    ctx.scale(sx, sy);
 
     // Body
     const bodyR = ts * 0.38;
@@ -420,7 +433,7 @@ export class Renderer {
     ctx.fillRect(-bodyR * 0.65, -bodyR * 0.55, bodyR * 1.3, 3);
 
     // Eyes based on direction
-    const eyeOff = this.getEyeOffset(state.playerDir);
+    const eyeOff = this.getEyeOffset(dir);
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
     ctx.arc(-4 + eyeOff.x, -2 + eyeOff.y, 3.5, 0, Math.PI * 2);
@@ -440,6 +453,125 @@ export class Renderer {
     ctx.stroke();
 
     ctx.restore();
+  }
+
+  private drawDeathAnim(ctx: CanvasRenderingContext2D, state: GameState, ts: number) {
+    const t = state.deathTimer;
+    const x = state.deathCol * ts;
+    const y = state.deathRow * ts;
+
+    if (state.deathType === 'crush') {
+      // CRUSH DEATH: Player gets squashed flat, then explodes
+      if (t < 200) {
+        // Phase 1: Squash — player flattens vertically, widens horizontally
+        const progress = t / 200;
+        const squashY = 1 - progress * 0.75;   // flatten to 25% height
+        const squashX = 1 + progress * 0.6;     // widen to 160%
+        // Shift down as they flatten
+        const offsetY = progress * ts * 0.3;
+
+        // Red flash overlay
+        const flashAlpha = Math.sin(progress * Math.PI) * 0.4;
+        ctx.save();
+        ctx.fillStyle = `rgba(255, 0, 0, ${flashAlpha})`;
+        ctx.fillRect(x - ts * 0.3, y - ts * 0.3, ts * 1.6, ts * 1.6);
+        ctx.restore();
+
+        this.drawPlayerBody(ctx, x, y + offsetY, ts, squashX, squashY, state.playerDir, false, 1);
+
+        // Impact lines radiating outward
+        ctx.save();
+        ctx.strokeStyle = `rgba(255, 200, 50, ${1 - progress})`;
+        ctx.lineWidth = 2;
+        const cx = x + ts / 2;
+        const cy = y + ts / 2;
+        for (let i = 0; i < 8; i++) {
+          const angle = (i / 8) * Math.PI * 2;
+          const innerR = ts * 0.4 + progress * ts * 0.2;
+          const outerR = innerR + progress * ts * 0.5;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(angle) * innerR, cy + Math.sin(angle) * innerR);
+          ctx.lineTo(cx + Math.cos(angle) * outerR, cy + Math.sin(angle) * outerR);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+      } else if (t < 500) {
+        // Phase 2: Explosion — flattened player fades + ring expands
+        const progress = (t - 200) / 300;
+        const fadeAlpha = 1 - progress;
+
+        // Draw the squished player fading out
+        if (fadeAlpha > 0.05) {
+          this.drawPlayerBody(ctx, x, y + ts * 0.3, ts, 1.6, 0.25, state.playerDir, false, fadeAlpha);
+        }
+
+        // Expanding explosion ring
+        const cx = x + ts / 2;
+        const cy = y + ts / 2;
+        const ringR = ts * 0.3 + progress * ts * 1.2;
+        const ringAlpha = (1 - progress) * 0.7;
+        ctx.save();
+        ctx.strokeStyle = `rgba(255, 100, 0, ${ringAlpha})`;
+        ctx.lineWidth = 3 * (1 - progress) + 1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Inner white flash
+        if (progress < 0.3) {
+          const flashR = ts * 0.5 * (1 - progress / 0.3);
+          const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, flashR);
+          glow.addColorStop(0, `rgba(255,255,255,${0.6 * (1 - progress / 0.3)})`);
+          glow.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(cx, cy, flashR, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+
+      } else if (t < 1200) {
+        // Phase 3: Smoke lingers (particles handle this) + ghost silhouette
+        const progress = (t - 500) / 700;
+        const ghostAlpha = Math.max(0, 0.2 * (1 - progress));
+        if (ghostAlpha > 0.01) {
+          this.drawPlayerBody(ctx, x, y, ts, 1, 1, state.playerDir, false, ghostAlpha);
+        }
+      }
+
+    } else if (state.deathType === 'enemy') {
+      // ENEMY DEATH: Flash red, expand, fade
+      if (t < 150) {
+        const progress = t / 150;
+        const scale = 1 + progress * 0.3;
+        // Red tint flash
+        this.drawPlayerBody(ctx, x, y, ts, scale, scale, state.playerDir, false, 1);
+        ctx.save();
+        ctx.fillStyle = `rgba(255, 0, 50, ${0.5 * Math.sin(progress * Math.PI)})`;
+        ctx.beginPath();
+        ctx.arc(x + ts / 2, y + ts / 2, ts * 0.5 * scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else if (t < 600) {
+        const progress = (t - 150) / 450;
+        const alpha = 1 - progress;
+        const scale = 1.3 + progress * 0.5;
+        if (alpha > 0.05) {
+          this.drawPlayerBody(ctx, x, y, ts, scale, scale, state.playerDir, false, alpha);
+        }
+      }
+
+    } else {
+      // TIME DEATH: Fade out with blink
+      if (t < 800) {
+        const blink = Math.sin(t * 0.03) > 0 ? 1 : 0.2;
+        this.drawPlayerBody(ctx, x, y, ts, 1, 1, state.playerDir, false, blink);
+      } else if (t < 1500) {
+        const progress = (t - 800) / 700;
+        this.drawPlayerBody(ctx, x, y, ts, 1 - progress * 0.5, 1 - progress * 0.5, state.playerDir, false, 1 - progress);
+      }
+    }
   }
 
   private getEyeOffset(dir: Direction): { x: number; y: number } {
