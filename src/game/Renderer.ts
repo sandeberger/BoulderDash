@@ -1,0 +1,470 @@
+import { Tile, GameState, Direction, CellAnim } from './types';
+
+const TILE_SIZE = 32;
+
+// Color palette
+const COLORS: Record<number, string> = {
+  [Tile.EMPTY]: '#1a1a2e',
+  [Tile.DIRT]: '#8B6914',
+  [Tile.WALL]: '#555577',
+  [Tile.BOULDER]: '#888899',
+  [Tile.DIAMOND]: '#00eeff',
+  [Tile.PLAYER]: '#ff6600',
+  [Tile.EXIT]: '#00ff88',
+  [Tile.SPIDER]: '#cc00ff',
+  [Tile.MONSTER]: '#ff0044',
+  [Tile.WATER]: '#2244ff',
+  [Tile.STEEL]: '#334455',
+  [Tile.EXPLOSION]: '#ff8800',
+};
+
+const DIRT_DETAIL = '#6B5210';
+const WALL_HIGHLIGHT = '#7777aa';
+const WALL_SHADOW = '#333355';
+
+export class Renderer {
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  private width = 0;
+  private height = 0;
+  private cameraX = 0;
+  private cameraY = 0;
+  private targetCameraX = 0;
+  private targetCameraY = 0;
+  private time = 0;
+  private tileSize = TILE_SIZE;
+
+  // Glow effects
+  private diamondGlow = 0;
+  private exitPulse = 0;
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d', { alpha: false })!;
+    this.resize();
+  }
+
+  resize() {
+    const dpr = window.devicePixelRatio || 1;
+    // Leave room for HUD at top and controls at bottom
+    const hudH = 40;
+    const controlH = 160;
+    const availW = window.innerWidth;
+    const availH = window.innerHeight - hudH - controlH;
+
+    this.width = availW;
+    this.height = availH + hudH; // canvas covers HUD area too for rendering
+
+    this.canvas.style.width = `${availW}px`;
+    this.canvas.style.height = `${this.height}px`;
+    this.canvas.style.marginTop = `${hudH}px`;
+    this.canvas.width = Math.floor(availW * dpr);
+    this.canvas.height = Math.floor(this.height * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Calculate tile size to fit well on screen
+    this.tileSize = Math.max(16, Math.min(40, Math.floor(Math.min(availW, availH) / 14)));
+  }
+
+  render(state: GameState, dt: number) {
+    this.time += dt;
+    this.diamondGlow = 0.5 + 0.5 * Math.sin(this.time * 0.004);
+    this.exitPulse = 0.5 + 0.5 * Math.sin(this.time * 0.006);
+
+    const ctx = this.ctx;
+    const ts = this.tileSize;
+
+    // Camera target: center on player
+    this.targetCameraX = state.playerCol * ts - this.width / 2 + ts / 2;
+    this.targetCameraY = state.playerRow * ts - (this.height) / 2 + ts / 2;
+
+    // Clamp camera
+    const mapW = state.cols * ts;
+    const mapH = state.rows * ts;
+    this.targetCameraX = Math.max(0, Math.min(this.targetCameraX, mapW - this.width));
+    this.targetCameraY = Math.max(0, Math.min(this.targetCameraY, mapH - this.height));
+
+    // Smooth camera lerp
+    const lerpSpeed = 1 - Math.pow(0.001, dt / 16);
+    this.cameraX += (this.targetCameraX - this.cameraX) * lerpSpeed;
+    this.cameraY += (this.targetCameraY - this.cameraY) * lerpSpeed;
+
+    // Screen shake
+    let shakeX = 0, shakeY = 0;
+    if (state.screenShake > 0) {
+      shakeX = (Math.random() - 0.5) * state.screenShake * 2;
+      shakeY = (Math.random() - 0.5) * state.screenShake * 2;
+    }
+
+    ctx.save();
+    ctx.translate(-this.cameraX + shakeX, -this.cameraY + shakeY);
+
+    // Clear
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(this.cameraX - 10, this.cameraY - 10, this.width + 20, this.height + 20);
+
+    // Determine visible tile range
+    const startCol = Math.max(0, Math.floor(this.cameraX / ts) - 1);
+    const endCol = Math.min(state.cols, Math.ceil((this.cameraX + this.width) / ts) + 1);
+    const startRow = Math.max(0, Math.floor(this.cameraY / ts) - 1);
+    const endRow = Math.min(state.rows, Math.ceil((this.cameraY + this.height) / ts) + 1);
+
+    // Render tiles
+    for (let r = startRow; r < endRow; r++) {
+      for (let c = startCol; c < endCol; c++) {
+        const tile = state.map[r][c];
+        const x = c * ts;
+        const y = r * ts;
+
+        // Check for animation offset
+        const animKey = `${r},${c}`;
+        const anim = state.animations.get(animKey);
+
+        if (anim && anim.progress < 1) {
+          // Draw empty behind animated tile
+          ctx.fillStyle = COLORS[Tile.EMPTY];
+          ctx.fillRect(x, y, ts, ts);
+          // Draw animated tile at interpolated position
+          const ease = easeOutCubic(anim.progress);
+          const ax = anim.fromCol * ts + (anim.toCol - anim.fromCol) * ts * ease;
+          const ay = anim.fromRow * ts + (anim.toRow - anim.fromRow) * ts * ease;
+          this.drawTile(ctx, tile, ax, ay, ts, r, c);
+        } else {
+          this.drawTile(ctx, tile, x, y, ts, r, c);
+        }
+      }
+    }
+
+    // Draw player
+    this.drawPlayer(ctx, state, ts);
+
+    // Draw particles
+    this.drawParticles(ctx, state, ts);
+
+    ctx.restore();
+  }
+
+  private drawTile(ctx: CanvasRenderingContext2D, tile: Tile, x: number, y: number, ts: number, r: number, c: number) {
+    const pad = 0.5;
+
+    switch (tile) {
+      case Tile.EMPTY:
+        ctx.fillStyle = COLORS[Tile.EMPTY];
+        ctx.fillRect(x, y, ts, ts);
+        break;
+
+      case Tile.DIRT:
+        ctx.fillStyle = COLORS[Tile.DIRT];
+        ctx.fillRect(x, y, ts, ts);
+        // Texture detail
+        ctx.fillStyle = DIRT_DETAIL;
+        const seed = (r * 173 + c * 337) % 7;
+        ctx.fillRect(x + 3 + seed, y + 4, 3, 2);
+        ctx.fillRect(x + ts - 8 + seed % 3, y + ts - 6, 2, 2);
+        ctx.fillRect(x + 6, y + ts / 2 + seed % 4, 2, 3);
+        // Edge darkening
+        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        ctx.fillRect(x, y + ts - 1, ts, 1);
+        ctx.fillRect(x + ts - 1, y, 1, ts);
+        break;
+
+      case Tile.WALL:
+        // Brick pattern
+        ctx.fillStyle = COLORS[Tile.WALL];
+        ctx.fillRect(x, y, ts, ts);
+        ctx.fillStyle = WALL_HIGHLIGHT;
+        ctx.fillRect(x, y, ts, 1);
+        ctx.fillRect(x, y, 1, ts);
+        ctx.fillStyle = WALL_SHADOW;
+        ctx.fillRect(x, y + ts - 1, ts, 1);
+        ctx.fillRect(x + ts - 1, y, 1, ts);
+        // Brick lines
+        ctx.fillStyle = WALL_SHADOW;
+        ctx.fillRect(x, y + ts / 2 - pad, ts, 1);
+        const brickOffset = (r % 2) * (ts / 2);
+        ctx.fillRect(x + brickOffset + ts / 4, y, 1, ts / 2);
+        ctx.fillRect(x + brickOffset + ts * 3 / 4, y + ts / 2, 1, ts / 2);
+        break;
+
+      case Tile.STEEL:
+        ctx.fillStyle = COLORS[Tile.STEEL];
+        ctx.fillRect(x, y, ts, ts);
+        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        ctx.fillRect(x + 1, y + 1, ts - 2, 1);
+        ctx.fillRect(x + 1, y + 1, 1, ts - 2);
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(x, y + ts - 1, ts, 1);
+        ctx.fillRect(x + ts - 1, y, 1, ts);
+        break;
+
+      case Tile.BOULDER:
+        ctx.fillStyle = COLORS[Tile.EMPTY];
+        ctx.fillRect(x, y, ts, ts);
+        // Rock with 3D shading
+        const rx = x + ts / 2;
+        const ry = y + ts / 2;
+        const rr = ts * 0.4;
+        const grad = ctx.createRadialGradient(rx - rr * 0.3, ry - rr * 0.3, rr * 0.1, rx, ry, rr);
+        grad.addColorStop(0, '#bbbbcc');
+        grad.addColorStop(0.7, '#888899');
+        grad.addColorStop(1, '#555566');
+        ctx.beginPath();
+        ctx.arc(rx, ry, rr, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        // Highlight
+        ctx.beginPath();
+        ctx.arc(rx - rr * 0.25, ry - rr * 0.25, rr * 0.2, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.fill();
+        break;
+
+      case Tile.DIAMOND: {
+        ctx.fillStyle = COLORS[Tile.EMPTY];
+        ctx.fillRect(x, y, ts, ts);
+        // Glowing diamond
+        const dx = x + ts / 2;
+        const dy = y + ts / 2;
+        const ds = ts * 0.35;
+        // Glow
+        const glowR = ds * (1.3 + this.diamondGlow * 0.4);
+        const glow = ctx.createRadialGradient(dx, dy, 0, dx, dy, glowR);
+        glow.addColorStop(0, 'rgba(0,238,255,0.35)');
+        glow.addColorStop(1, 'rgba(0,238,255,0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(x, y, ts, ts);
+        // Diamond shape
+        ctx.beginPath();
+        ctx.moveTo(dx, dy - ds);
+        ctx.lineTo(dx + ds, dy);
+        ctx.lineTo(dx, dy + ds);
+        ctx.lineTo(dx - ds, dy);
+        ctx.closePath();
+        const dGrad = ctx.createLinearGradient(dx - ds, dy - ds, dx + ds, dy + ds);
+        dGrad.addColorStop(0, '#88ffff');
+        dGrad.addColorStop(0.5, '#00eeff');
+        dGrad.addColorStop(1, '#0088cc');
+        ctx.fillStyle = dGrad;
+        ctx.fill();
+        // Sparkle
+        ctx.fillStyle = `rgba(255,255,255,${0.5 + this.diamondGlow * 0.5})`;
+        const sparkleSize = 2 + this.diamondGlow;
+        ctx.fillRect(dx - sparkleSize / 2, dy - ds * 0.5 - sparkleSize / 2, sparkleSize, sparkleSize);
+        break;
+      }
+
+      case Tile.EXIT: {
+        ctx.fillStyle = COLORS[Tile.EMPTY];
+        ctx.fillRect(x, y, ts, ts);
+        const ex = x + ts / 2;
+        const ey = y + ts / 2;
+        if (this.exitPulse !== undefined) {
+          // Pulsing glow when open
+          const eg = ctx.createRadialGradient(ex, ey, 0, ex, ey, ts * 0.6);
+          eg.addColorStop(0, `rgba(0,255,136,${0.3 + this.exitPulse * 0.2})`);
+          eg.addColorStop(1, 'rgba(0,255,136,0)');
+          ctx.fillStyle = eg;
+          ctx.fillRect(x, y, ts, ts);
+        }
+        // Door frame
+        ctx.fillStyle = '#446644';
+        ctx.fillRect(x + 2, y + 2, ts - 4, ts - 4);
+        ctx.fillStyle = COLORS[Tile.EXIT];
+        ctx.fillRect(x + 4, y + 4, ts - 8, ts - 8);
+        // Arrow
+        ctx.fillStyle = '#003322';
+        const ax = x + ts / 2;
+        const ay = y + ts / 2;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay - 4);
+        ctx.lineTo(ax + 5, ay + 2);
+        ctx.lineTo(ax - 5, ay + 2);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      }
+
+      case Tile.SPIDER: {
+        ctx.fillStyle = COLORS[Tile.EMPTY];
+        ctx.fillRect(x, y, ts, ts);
+        const sx = x + ts / 2;
+        const sy = y + ts / 2;
+        // Body
+        ctx.beginPath();
+        ctx.arc(sx, sy, ts * 0.3, 0, Math.PI * 2);
+        ctx.fillStyle = COLORS[Tile.SPIDER];
+        ctx.fill();
+        // Eyes
+        ctx.fillStyle = '#ff0000';
+        ctx.fillRect(sx - 4, sy - 3, 3, 3);
+        ctx.fillRect(sx + 1, sy - 3, 3, 3);
+        // Legs
+        ctx.strokeStyle = COLORS[Tile.SPIDER];
+        ctx.lineWidth = 1.5;
+        const legAng = Math.sin(this.time * 0.01) * 0.3;
+        for (let i = 0; i < 4; i++) {
+          const angle = (i / 4) * Math.PI * 2 + legAng;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx + Math.cos(angle) * ts * 0.45, sy + Math.sin(angle) * ts * 0.45);
+          ctx.stroke();
+        }
+        break;
+      }
+
+      case Tile.MONSTER: {
+        ctx.fillStyle = COLORS[Tile.EMPTY];
+        ctx.fillRect(x, y, ts, ts);
+        const mx = x + ts / 2;
+        const my = y + ts / 2;
+        // Body
+        const bounce = Math.sin(this.time * 0.008) * 2;
+        ctx.fillStyle = COLORS[Tile.MONSTER];
+        ctx.fillRect(mx - ts * 0.35, my - ts * 0.3 + bounce, ts * 0.7, ts * 0.5);
+        // Teeth
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < 4; i++) {
+          ctx.fillRect(mx - ts * 0.25 + i * 5, my + ts * 0.15 + bounce, 3, 3);
+        }
+        // Eyes
+        ctx.fillStyle = '#ffff00';
+        ctx.beginPath();
+        ctx.arc(mx - 4, my - ts * 0.1 + bounce, 3, 0, Math.PI * 2);
+        ctx.arc(mx + 4, my - ts * 0.1 + bounce, 3, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+
+      case Tile.WATER: {
+        const waveOff = Math.sin(this.time * 0.003 + c * 0.5) * 2;
+        ctx.fillStyle = '#1133aa';
+        ctx.fillRect(x, y, ts, ts);
+        ctx.fillStyle = 'rgba(100,180,255,0.3)';
+        ctx.fillRect(x, y + ts / 3 + waveOff, ts, 2);
+        ctx.fillRect(x, y + ts * 2 / 3 - waveOff, ts, 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.fillRect(x + 3, y + 2 + waveOff, 6, 1);
+        break;
+      }
+
+      case Tile.EXPLOSION: {
+        ctx.fillStyle = COLORS[Tile.EMPTY];
+        ctx.fillRect(x, y, ts, ts);
+        const ep = ctx.createRadialGradient(x + ts / 2, y + ts / 2, 0, x + ts / 2, y + ts / 2, ts * 0.5);
+        ep.addColorStop(0, '#ffffff');
+        ep.addColorStop(0.3, '#ffaa00');
+        ep.addColorStop(0.7, '#ff4400');
+        ep.addColorStop(1, 'rgba(255,68,0,0)');
+        ctx.fillStyle = ep;
+        ctx.fillRect(x, y, ts, ts);
+        break;
+      }
+
+      default:
+        ctx.fillStyle = COLORS[tile] || '#ff00ff';
+        ctx.fillRect(x, y, ts, ts);
+    }
+  }
+
+  private drawPlayer(ctx: CanvasRenderingContext2D, state: GameState, ts: number) {
+    if (!state.alive) return;
+
+    let x = state.playerCol * ts;
+    let y = state.playerRow * ts;
+
+    // Check for movement animation
+    const animKey = `${state.playerRow},${state.playerCol}`;
+    const anim = state.animations.get(animKey);
+    if (anim && anim.progress < 1) {
+      const ease = easeOutCubic(anim.progress);
+      x = anim.fromCol * ts + (anim.toCol - anim.fromCol) * ts * ease;
+      y = anim.fromRow * ts + (anim.toRow - anim.fromRow) * ts * ease;
+    }
+
+    const cx = x + ts / 2;
+    const cy = y + ts / 2;
+
+    // Squash & stretch
+    let scaleX = 1, scaleY = 1;
+    if (state.playerMoving) {
+      const stretch = Math.sin(this.time * 0.02) * 0.08;
+      if (state.playerDir === Direction.UP || state.playerDir === Direction.DOWN) {
+        scaleX = 1 - stretch;
+        scaleY = 1 + stretch;
+      } else {
+        scaleX = 1 + stretch;
+        scaleY = 1 - stretch;
+      }
+    }
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scaleX, scaleY);
+
+    // Body
+    const bodyR = ts * 0.38;
+    const bodyGrad = ctx.createRadialGradient(-bodyR * 0.2, -bodyR * 0.2, bodyR * 0.1, 0, 0, bodyR);
+    bodyGrad.addColorStop(0, '#ffaa44');
+    bodyGrad.addColorStop(1, '#cc5500');
+    ctx.beginPath();
+    ctx.arc(0, 0, bodyR, 0, Math.PI * 2);
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+
+    // Hard hat
+    ctx.fillStyle = '#ffdd00';
+    ctx.beginPath();
+    ctx.ellipse(0, -bodyR * 0.5, bodyR * 0.85, bodyR * 0.35, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = '#eebb00';
+    ctx.fillRect(-bodyR * 0.65, -bodyR * 0.55, bodyR * 1.3, 3);
+
+    // Eyes based on direction
+    const eyeOff = this.getEyeOffset(state.playerDir);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(-4 + eyeOff.x, -2 + eyeOff.y, 3.5, 0, Math.PI * 2);
+    ctx.arc(4 + eyeOff.x, -2 + eyeOff.y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.arc(-4 + eyeOff.x * 1.5, -2 + eyeOff.y * 1.5, 2, 0, Math.PI * 2);
+    ctx.arc(4 + eyeOff.x * 1.5, -2 + eyeOff.y * 1.5, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Mouth
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(eyeOff.x * 0.5, 5 + eyeOff.y * 0.5, 3, 0, Math.PI);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  private getEyeOffset(dir: Direction): { x: number; y: number } {
+    switch (dir) {
+      case Direction.UP: return { x: 0, y: -2 };
+      case Direction.DOWN: return { x: 0, y: 2 };
+      case Direction.LEFT: return { x: -2, y: 0 };
+      case Direction.RIGHT: return { x: 2, y: 0 };
+      default: return { x: 0, y: 0 };
+    }
+  }
+
+  private drawParticles(ctx: CanvasRenderingContext2D, state: GameState, ts: number) {
+    for (const p of state.particles) {
+      const alpha = Math.max(0, p.life / p.maxLife);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      const px = p.x * ts + ts / 2;
+      const py = p.y * ts + ts / 2;
+      ctx.fillRect(px - p.size / 2, py - p.size / 2, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
+}

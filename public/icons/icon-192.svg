@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" fill="#0a0a1a" rx="24"/>
+  <defs>
+    <linearGradient id="dg" x1="40" y1="40" x2="152" y2="152" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#88ffff"/>
+      <stop offset=".5" stop-color="#00eeff"/>
+      <stop offset="1" stop-color="#0088cc"/>
+    </linearGradient>
+    <radialGradient id="gl" cx="96" cy="96" r="70" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00eeff" stop-opacity=".4"/>
+      <stop offset="1" stop-color="#00eeff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="96" cy="96" r="70" fill="url(#gl)"/>
+  <polygon points="96,36 150,96 96,156 42,96" fill="url(#dg)"/>
+  <text x="96" y="184" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="20" fill="#f5af19">BOULDER DASH</text>
+</svg>

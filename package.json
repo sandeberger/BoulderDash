@@ -1,0 +1,16 @@
+{
+  "name": "boulder-dash",
+  "version": "1.0.0",
+  "description": "Hyper-animated Boulder Dash clone — Mobile First PWA",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21"
+  }
+}
