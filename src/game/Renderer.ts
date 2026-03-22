@@ -4,7 +4,7 @@ const TILE_SIZE = 32;
 
 // Color palette
 const COLORS: Record<number, string> = {
-  [Tile.EMPTY]: '#1a1a2e',
+  [Tile.EMPTY]: '#2a2a3e',
   [Tile.DIRT]: '#8B6914',
   [Tile.WALL]: '#555577',
   [Tile.BOULDER]: '#888899',
@@ -148,10 +148,20 @@ export class Renderer {
     const pad = 0.5;
 
     switch (tile) {
-      case Tile.EMPTY:
+      case Tile.EMPTY: {
         ctx.fillStyle = COLORS[Tile.EMPTY];
         ctx.fillRect(x, y, ts, ts);
+        // Subtle stone-floor texture using seeded variation
+        const es = (r * 131 + c * 257) % 13;
+        ctx.fillStyle = es < 4 ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.04)';
+        ctx.fillRect(x + (es % 5) * 3 + 2, y + (es % 3) * 4 + 2, 3, 2);
+        ctx.fillRect(x + ts - 6 - es % 4, y + ts - 5 - es % 3, 2, 2);
+        // Grid lines (very faint tile edges)
+        ctx.fillStyle = 'rgba(255,255,255,0.03)';
+        ctx.fillRect(x, y, ts, 1);
+        ctx.fillRect(x, y, 1, ts);
         break;
+      }
 
       case Tile.DIRT:
         ctx.fillStyle = COLORS[Tile.DIRT];
