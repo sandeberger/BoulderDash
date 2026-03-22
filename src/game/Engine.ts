@@ -1,4 +1,4 @@
-import { Tile, GameState, Direction, CellAnim, Particle, Pos } from './types';
+import { Tile, GameState, Direction, CellAnim, Particle, Pos, Projectile } from './types';
 import { LEVELS } from './levels';
 
 const MOVE_SPEED = 8; // ticks between player moves
@@ -66,6 +66,8 @@ export class Engine {
       deathType: 'none',
       deathRow: 0,
       deathCol: 0,
+      shurikens: 0,
+      projectiles: [],
     };
     this.moveTick = 0;
     this.rockTick = 0;
@@ -139,6 +141,9 @@ export class Engine {
       this.enemyTick = 0;
     }
 
+    // Projectile updates (every tick — fast!)
+    this.updateProjectiles(dt);
+
     // Explosion cleanup
     this.updateExplosions();
   }
@@ -191,6 +196,16 @@ export class Engine {
         }
         break;
 
+      case Tile.SHURIKEN:
+        s.map[nr][nc] = Tile.EMPTY;
+        s.shurikens++;
+        s.score += 10;
+        this.doMove(nr, nc);
+        this.spawnParticles(nc, nr, '#cccccc', 8);
+        this.spawnParticles(nc, nr, '#ffffff', 4);
+        this.vibrate(15);
+        break;
+
       case Tile.EXIT:
         if (s.exitOpen) {
           this.doMove(nr, nc);
@@ -202,6 +217,20 @@ export class Engine {
         // Wall, steel, enemies — can't move
         break;
     }
+  }
+
+  throwShuriken() {
+    const s = this.state;
+    if (!s.alive || s.shurikens <= 0 || s.playerDir === Direction.NONE) return;
+    s.shurikens--;
+    const { row: dr, col: dc } = dirToDelta(s.playerDir);
+    s.projectiles.push({
+      row: s.playerRow + dr,
+      col: s.playerCol + dc,
+      dir: s.playerDir,
+      progress: 0,
+    });
+    this.vibrate(15);
   }
 
   private doMove(nr: number, nc: number) {
@@ -431,6 +460,54 @@ export class Engine {
     // Handled by timeout in explodeAt for diamond cases
   }
 
+  private updateProjectiles(dt: number) {
+    const s = this.state;
+    const speed = 0.012; // cells per ms (fast!)
+
+    for (let i = s.projectiles.length - 1; i >= 0; i--) {
+      const p = s.projectiles[i];
+      p.progress += speed * dt;
+
+      if (p.progress >= 1) {
+        // Move to next cell
+        p.progress -= 1;
+        const { row: dr, col: dc } = dirToDelta(p.dir);
+        const nr = p.row + dr;
+        const nc = p.col + dc;
+
+        // Check bounds
+        if (nr < 0 || nr >= s.rows || nc < 0 || nc >= s.cols) {
+          s.projectiles.splice(i, 1);
+          continue;
+        }
+
+        const target = s.map[nr][nc];
+
+        // Hit enemy
+        if (target === Tile.SPIDER || target === Tile.MONSTER) {
+          const radius = target === Tile.SPIDER ? 1 : 1;
+          this.explodeAt(nr, nc, radius, target === Tile.SPIDER);
+          s.score += 50;
+          s.screenShake = 6;
+          this.vibrate(40);
+          this.spawnParticles(nc, nr, '#cccccc', 10);
+          s.projectiles.splice(i, 1);
+          continue;
+        }
+
+        // Hit solid (wall, boulder, steel, dirt)
+        if (target !== Tile.EMPTY) {
+          this.spawnParticles(nc, nr, '#999999', 4);
+          s.projectiles.splice(i, 1);
+          continue;
+        }
+
+        p.row = nr;
+        p.col = nc;
+      }
+    }
+  }
+
   private updateParticlesAndShake(dt: number) {
     const s = this.state;
 
@@ -606,6 +683,7 @@ function charToTile(ch: string): Tile {
     case 'c': return Tile.SPIDER;
     case 'e': return Tile.MONSTER;
     case 'x': return Tile.WATER;
+    case 's': return Tile.SHURIKEN;
     default: return Tile.DIRT;
   }
 }

@@ -11,6 +11,7 @@ export enum Tile {
   WATER = 9,
   STEEL = 10,     // indestructible border
   EXPLOSION = 11,
+  SHURIKEN = 12,   // throwable pickup
 }
 
 export interface Pos {
@@ -38,6 +39,13 @@ export interface Particle {
   size: number;
 }
 
+export interface Projectile {
+  row: number;
+  col: number;
+  dir: Direction;
+  progress: number;  // 0..1 within current cell
+}
+
 export interface GameState {
   map: Tile[][];
   rows: number;
@@ -63,6 +71,8 @@ export interface GameState {
   deathType: 'none' | 'crush' | 'enemy' | 'time';
   deathRow: number;
   deathCol: number;
+  shurikens: number;       // collected shurikens
+  projectiles: Projectile[];
 }
 
 export enum Direction {

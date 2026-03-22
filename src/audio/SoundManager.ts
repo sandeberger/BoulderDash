@@ -95,6 +95,26 @@ export class SoundManager {
     osc.stop(now + 0.6);
   }
 
+  playThrow() {
+    this.ensureCtx();
+    const ctx = this.ctx!;
+    const now = ctx.currentTime;
+    // Whoosh sound
+    this.playNoise(0.08, 2000, 500);
+    // Metallic ping
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1200, now);
+    osc.frequency.exponentialRampToValueAtTime(3000, now + 0.06);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    osc.connect(gain);
+    gain.connect(this.gainNode!);
+    osc.start(now);
+    osc.stop(now + 0.1);
+  }
+
   playLevelComplete() {
     this.ensureCtx();
     const ctx = this.ctx!;

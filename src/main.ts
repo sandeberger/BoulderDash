@@ -23,6 +23,8 @@ const gameOverTitle = document.getElementById('gameover-title') as HTMLElement;
 const gameOverScore = document.getElementById('gameover-score') as HTMLElement;
 const btnRestart = document.getElementById('btn-restart') as HTMLButtonElement;
 const dpadContainer = document.getElementById('dpad-container') as HTMLElement;
+const throwBtn = document.getElementById('throw-btn') as HTMLButtonElement;
+const shurikenCount = document.getElementById('shuriken-count') as HTMLElement;
 
 // ── Game state ──
 type AppState = 'menu' | 'playing' | 'level-announce' | 'dead' | 'gameover' | 'level-complete';
@@ -71,6 +73,29 @@ function init() {
     gameOverScreen.style.display = 'none';
     engine = new Engine();
     startGame();
+  });
+
+  // Throw button
+  const doThrow = () => {
+    if (appState === 'playing' && engine.state.shurikens > 0) {
+      engine.throwShuriken();
+      sound.playThrow();
+    }
+  };
+  throwBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    doThrow();
+    throwBtn.classList.add('active');
+  });
+  throwBtn.addEventListener('touchend', () => {
+    throwBtn.classList.remove('active');
+  });
+  throwBtn.addEventListener('mousedown', doThrow);
+  window.addEventListener('keydown', (e) => {
+    if ((e.code === 'Space' || e.code === 'KeyF') && appState === 'playing') {
+      e.preventDefault();
+      doThrow();
+    }
   });
 
   // PWA
@@ -222,6 +247,10 @@ function updateHUD(s: typeof engine.state) {
   } else {
     hudDiamonds.style.color = '';
   }
+
+  // Shuriken count
+  shurikenCount.textContent = `${s.shurikens}`;
+  throwBtn.classList.toggle('empty', s.shurikens <= 0);
 }
 
 function showGameOver(won: boolean) {

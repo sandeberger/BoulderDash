@@ -138,6 +138,9 @@ export class Renderer {
     // Draw player
     this.drawPlayer(ctx, state, ts);
 
+    // Draw flying shurikens
+    this.drawProjectiles(ctx, state, ts);
+
     // Draw particles
     this.drawParticles(ctx, state, ts);
 
@@ -380,6 +383,44 @@ export class Renderer {
         ctx.fillRect(x, y + ts * 2 / 3 - waveOff, ts, 2);
         ctx.fillStyle = 'rgba(255,255,255,0.1)';
         ctx.fillRect(x + 3, y + 2 + waveOff, 6, 1);
+        break;
+      }
+
+      case Tile.SHURIKEN: {
+        ctx.fillStyle = COLORS[Tile.EMPTY];
+        ctx.fillRect(x, y, ts, ts);
+        const sx = x + ts / 2;
+        const sy = y + ts / 2;
+        const sr = ts * 0.28;
+        // Spinning shuriken
+        const sAngle = this.time * 0.006 + (r * 31 + c * 47);
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(sAngle);
+        // 4-point star
+        ctx.fillStyle = '#ccccdd';
+        for (let i = 0; i < 4; i++) {
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(-sr * 0.2, -sr);
+          ctx.lineTo(0, -sr * 0.7);
+          ctx.lineTo(sr * 0.2, -sr);
+          ctx.closePath();
+          ctx.fill();
+          ctx.rotate(Math.PI / 2);
+        }
+        // Center circle
+        ctx.beginPath();
+        ctx.arc(0, 0, sr * 0.2, 0, Math.PI * 2);
+        ctx.fillStyle = '#888899';
+        ctx.fill();
+        // Glint
+        const sGlint = Math.sin(this.time * 0.005 + r + c) * 0.5 + 0.5;
+        ctx.beginPath();
+        ctx.arc(sr * 0.1, -sr * 0.1, sr * 0.08, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${sGlint * 0.7})`;
+        ctx.fill();
+        ctx.restore();
         break;
       }
 
@@ -692,6 +733,50 @@ export class Renderer {
     }
   }
 
+  private drawProjectiles(ctx: CanvasRenderingContext2D, state: GameState, ts: number) {
+    for (const p of state.projectiles) {
+      const { row: dr, col: dc } = dirToDelta(p.dir);
+      const px = (p.col - dc * (1 - p.progress)) * ts + ts / 2;
+      const py = (p.row - dr * (1 - p.progress)) * ts + ts / 2;
+      const sr = ts * 0.2;
+      const angle = this.time * 0.02;
+
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(angle);
+      // Spinning 4-blade shuriken
+      ctx.fillStyle = '#dddde8';
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-sr * 0.15, -sr);
+        ctx.lineTo(sr * 0.15, -sr);
+        ctx.closePath();
+        ctx.fill();
+        ctx.rotate(Math.PI / 2);
+      }
+      ctx.beginPath();
+      ctx.arc(0, 0, sr * 0.15, 0, Math.PI * 2);
+      ctx.fillStyle = '#aaaabb';
+      ctx.fill();
+      // Motion trail
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = '#aaaacc';
+      const trailDx = -dc * ts * 0.3;
+      const trailDy = -dr * ts * 0.3;
+      ctx.beginPath();
+      ctx.arc(px + trailDx, py + trailDy, sr * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 0.15;
+      ctx.beginPath();
+      ctx.arc(px + trailDx * 2, py + trailDy * 2, sr * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
   private drawParticles(ctx: CanvasRenderingContext2D, state: GameState, ts: number) {
     for (const p of state.particles) {
       const alpha = Math.max(0, p.life / p.maxLife);
@@ -707,4 +792,14 @@ export class Renderer {
 
 function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
+}
+
+function dirToDelta(dir: Direction): { row: number; col: number } {
+  switch (dir) {
+    case Direction.UP: return { row: -1, col: 0 };
+    case Direction.DOWN: return { row: 1, col: 0 };
+    case Direction.LEFT: return { row: 0, col: -1 };
+    case Direction.RIGHT: return { row: 0, col: 1 };
+    default: return { row: 0, col: 0 };
+  }
 }
