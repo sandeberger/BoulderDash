@@ -440,43 +440,115 @@ export class Renderer {
     ctx.translate(cx, cy);
     ctx.scale(sx, sy);
 
-    // Body
-    const bodyR = ts * 0.38;
-    const bodyGrad = ctx.createRadialGradient(-bodyR * 0.2, -bodyR * 0.2, bodyR * 0.1, 0, 0, bodyR);
-    bodyGrad.addColorStop(0, '#ffaa44');
-    bodyGrad.addColorStop(1, '#cc5500');
+    const u = ts / 32; // unit scale factor
+    const eyeOff = this.getEyeOffset(dir);
+
+    // -- Ninja body (dark outfit) --
+    const bodyR = ts * 0.36;
+    const bodyGrad = ctx.createRadialGradient(-bodyR * 0.2, bodyR * 0.1, bodyR * 0.05, 0, 0, bodyR);
+    bodyGrad.addColorStop(0, '#3a3a4a');
+    bodyGrad.addColorStop(1, '#1a1a2a');
     ctx.beginPath();
-    ctx.arc(0, 0, bodyR, 0, Math.PI * 2);
+    ctx.arc(0, u * 2, bodyR, 0, Math.PI * 2);
     ctx.fillStyle = bodyGrad;
     ctx.fill();
 
-    // Hard hat
-    ctx.fillStyle = '#ffdd00';
+    // -- Head --
+    const headR = ts * 0.3;
+    const headGrad = ctx.createRadialGradient(-headR * 0.15, -headR * 0.6, headR * 0.05, 0, -headR * 0.35, headR);
+    headGrad.addColorStop(0, '#444455');
+    headGrad.addColorStop(1, '#222233');
     ctx.beginPath();
-    ctx.ellipse(0, -bodyR * 0.5, bodyR * 0.85, bodyR * 0.35, 0, Math.PI, 0);
+    ctx.arc(0, -u * 3, headR, 0, Math.PI * 2);
+    ctx.fillStyle = headGrad;
     ctx.fill();
-    ctx.fillStyle = '#eebb00';
-    ctx.fillRect(-bodyR * 0.65, -bodyR * 0.55, bodyR * 1.3, 3);
 
-    // Eyes based on direction
-    const eyeOff = this.getEyeOffset(dir);
+    // -- Mask / headband (red) --
+    ctx.fillStyle = '#cc2222';
+    ctx.fillRect(-headR * 0.95, -u * 5.5, headR * 1.9, u * 3.2);
+    // Headband tails fluttering based on direction
+    const tailWave = Math.sin(this.time * 0.012) * u * 1.5;
+    const tailDir = dir === Direction.LEFT ? -1 : 1;
+    ctx.beginPath();
+    ctx.moveTo(headR * 0.85 * tailDir, -u * 5);
+    ctx.quadraticCurveTo(
+      headR * 1.4 * tailDir + tailWave, -u * 6 + tailWave,
+      headR * 1.8 * tailDir + tailWave * 1.5, -u * 5.5 + tailWave
+    );
+    ctx.lineTo(headR * 1.6 * tailDir + tailWave * 1.2, -u * 3.5 + tailWave * 0.5);
+    ctx.quadraticCurveTo(
+      headR * 1.2 * tailDir + tailWave * 0.5, -u * 3,
+      headR * 0.85 * tailDir, -u * 2.5
+    );
+    ctx.fillStyle = '#cc2222';
+    ctx.fill();
+    // Second shorter tail
+    ctx.beginPath();
+    ctx.moveTo(headR * 0.7 * tailDir, -u * 4.5);
+    ctx.quadraticCurveTo(
+      headR * 1.1 * tailDir + tailWave * 0.8, -u * 5.5 + tailWave * 0.6,
+      headR * 1.4 * tailDir + tailWave, -u * 4.5 + tailWave * 0.8
+    );
+    ctx.lineTo(headR * 1.2 * tailDir + tailWave * 0.6, -u * 3 + tailWave * 0.3);
+    ctx.quadraticCurveTo(
+      headR * 0.9 * tailDir, -u * 2.8,
+      headR * 0.7 * tailDir, -u * 2.5
+    );
+    ctx.fillStyle = '#aa1818';
+    ctx.fill();
+
+    // -- Eyes (intense, white with small bright pupils) --
+    const eyeSpacing = u * 3.5;
+    const eyeY = -u * 4;
+    // White slit eyes
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(-4 + eyeOff.x, -2 + eyeOff.y, 3.5, 0, Math.PI * 2);
-    ctx.arc(4 + eyeOff.x, -2 + eyeOff.y, 3.5, 0, Math.PI * 2);
+    ctx.ellipse(-eyeSpacing + eyeOff.x, eyeY + eyeOff.y, u * 3, u * 1.8, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#000000';
     ctx.beginPath();
-    ctx.arc(-4 + eyeOff.x * 1.5, -2 + eyeOff.y * 1.5, 2, 0, Math.PI * 2);
-    ctx.arc(4 + eyeOff.x * 1.5, -2 + eyeOff.y * 1.5, 2, 0, Math.PI * 2);
+    ctx.ellipse(eyeSpacing + eyeOff.x, eyeY + eyeOff.y, u * 3, u * 1.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Sharp pupils
+    ctx.fillStyle = '#111111';
+    ctx.beginPath();
+    ctx.ellipse(-eyeSpacing + eyeOff.x * 1.4, eyeY + eyeOff.y * 1.2, u * 1.5, u * 1.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(eyeSpacing + eyeOff.x * 1.4, eyeY + eyeOff.y * 1.2, u * 1.5, u * 1.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Tiny eye shine
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillRect(-eyeSpacing + eyeOff.x * 1.4 - u * 0.8, eyeY + eyeOff.y * 1.2 - u * 0.8, u, u);
+    ctx.fillRect(eyeSpacing + eyeOff.x * 1.4 - u * 0.8, eyeY + eyeOff.y * 1.2 - u * 0.8, u, u);
+
+    // -- Belt --
+    ctx.fillStyle = '#555566';
+    ctx.fillRect(-bodyR * 0.6, u * 1, bodyR * 1.2, u * 1.8);
+    // Belt buckle
+    ctx.fillStyle = '#998844';
+    ctx.fillRect(-u * 1.5, u * 1.2, u * 3, u * 1.4);
+
+    // -- Arms (small nubs, direction-aware) --
+    ctx.fillStyle = '#2a2a3a';
+    const armY = u * 1;
+    // Lead arm slightly forward in movement direction
+    const armFwd = moving ? Math.sin(this.time * 0.025) * u * 2 : 0;
+    ctx.beginPath();
+    ctx.arc(-bodyR * 0.85 + eyeOff.x * 0.5 - armFwd, armY, u * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(bodyR * 0.85 + eyeOff.x * 0.5 + armFwd, armY, u * 2.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Mouth
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 1.5;
+    // -- Feet (slight run animation) --
+    const footSpread = moving ? Math.sin(this.time * 0.025) * u * 2 : 0;
+    ctx.fillStyle = '#222233';
     ctx.beginPath();
-    ctx.arc(eyeOff.x * 0.5, 5 + eyeOff.y * 0.5, 3, 0, Math.PI);
-    ctx.stroke();
+    ctx.ellipse(-u * 3 - footSpread, bodyR + u * 2, u * 2.5, u * 1.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(u * 3 + footSpread, bodyR + u * 2, u * 2.5, u * 1.5, 0, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.restore();
   }
