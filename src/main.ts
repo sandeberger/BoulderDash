@@ -98,12 +98,55 @@ function init() {
     }
   });
 
+  // Konami code: ↑↑↓↓←→←→BA → skip to next level
+  const konamiSeq = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','KeyB','KeyA'];
+  let konamiIdx = 0;
+  let konamiTimer = 0;
+  window.addEventListener('keydown', (e) => {
+    if (e.code === konamiSeq[konamiIdx]) {
+      konamiIdx++;
+      konamiTimer = Date.now();
+      if (konamiIdx === konamiSeq.length) {
+        konamiIdx = 0;
+        activateKonami();
+      }
+    } else {
+      konamiIdx = e.code === konamiSeq[0] ? 1 : 0;
+    }
+  });
+  // Reset if too slow (3s timeout)
+  setInterval(() => {
+    if (konamiIdx > 0 && Date.now() - konamiTimer > 3000) konamiIdx = 0;
+  }, 500);
+
   // PWA
   registerServiceWorker();
   setupInstallPrompt();
 
   // Start background animation
   requestAnimationFrame(loop);
+}
+
+function activateKonami() {
+  if (appState !== 'playing' && appState !== 'level-announce') return;
+  // Flash effect
+  const s = engine.state;
+  engine.spawnParticles(s.playerCol, s.playerRow, '#ffff00', 30);
+  engine.spawnParticles(s.playerCol, s.playerRow, '#ff00ff', 20);
+  s.screenShake = 5;
+  sound.playLevelComplete();
+  if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+
+  // Skip to next level after short delay
+  setTimeout(() => {
+    engine.nextLevel();
+    prevExitOpen = false;
+    prevDiamonds = 0;
+    prevPlayerPos = { row: engine.state.playerRow, col: engine.state.playerCol };
+    appState = 'level-announce';
+    announceTimer = 2000;
+    showLevelAnnounce();
+  }, 500);
 }
 
 function startGame() {
