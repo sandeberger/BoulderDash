@@ -14,6 +14,7 @@ export class Engine {
   private inputQueue: Direction = Direction.NONE;
   private inputHeld: Direction = Direction.NONE;
   private tickCount = 0;
+  private fallingCells = new Set<string>(); // tracks cells with actively falling rocks/diamonds
 
   constructor() {
     this.loadLevel(0);
@@ -70,6 +71,7 @@ export class Engine {
     this.rockTick = 0;
     this.enemyTick = 0;
     this.tickCount = 0;
+    this.fallingCells.clear();
   }
 
   setInput(dir: Direction) {
@@ -211,6 +213,7 @@ export class Engine {
 
   private updateFalling() {
     const s = this.state;
+    const newFalling = new Set<string>();
     // Process bottom-up so rocks fall correctly
     for (let r = s.rows - 2; r >= 0; r--) {
       for (let c = 0; c < s.cols; c++) {
@@ -218,44 +221,66 @@ export class Engine {
         if (tile !== Tile.BOULDER && tile !== Tile.DIAMOND) continue;
 
         const below = s.map[r + 1]?.[c];
+        const cellKey = `${r},${c}`;
+        const wasFalling = this.fallingCells.has(cellKey);
+        const belowIsPlayer = (r + 1 === s.playerRow && c === s.playerCol);
 
         // Fall straight down
-        if (below === Tile.EMPTY) {
+        // A resting rock does NOT fall onto the player (player blocks it).
+        // But a rock already in motion (falling) WILL crush the player.
+        if (below === Tile.EMPTY && !belowIsPlayer) {
           s.map[r + 1][c] = tile;
           s.map[r][c] = Tile.EMPTY;
           this.addAnimation(r, c, r + 1, c, 'fall');
+          // Track this rock as falling
+          this.fallingCells.delete(cellKey);
+          newFalling.add(`${r + 1},${c}`);
+          continue;
+        }
 
-          // Check if landing on player
-          if (r + 2 < s.rows && r + 2 === s.playerRow && c === s.playerCol) {
-            // Will hit player next tick
-          }
-          if (r + 1 === s.playerRow && c === s.playerCol) {
-            this.killPlayer('crush');
-          }
-          // Kill enemies
-          if (s.map[r + 2]?.[c] === Tile.SPIDER || s.map[r + 2]?.[c] === Tile.MONSTER) {
-            // Enemy is below where rock just moved - check next tick
-          }
+        // Already-falling rock/diamond lands on the player → crush!
+        if (belowIsPlayer && wasFalling) {
+          this.killPlayer('crush');
+          this.fallingCells.delete(cellKey);
+          continue;
+        }
+
+        // If player is below but rock wasn't falling, just treat player as solid
+        if (belowIsPlayer) {
+          this.fallingCells.delete(cellKey);
           continue;
         }
 
         // Roll off other boulders/diamonds/walls
         if (below === Tile.BOULDER || below === Tile.DIAMOND || below === Tile.WALL || below === Tile.STEEL) {
           // Try roll left
-          if (c > 0 && s.map[r][c - 1] === Tile.EMPTY && s.map[r + 1][c - 1] === Tile.EMPTY) {
+          const leftIsPlayer = (r === s.playerRow && c - 1 === s.playerCol);
+          const leftBelowIsPlayer = (r + 1 === s.playerRow && c - 1 === s.playerCol);
+          if (c > 0 && s.map[r][c - 1] === Tile.EMPTY && !leftIsPlayer
+              && s.map[r + 1][c - 1] === Tile.EMPTY && !leftBelowIsPlayer) {
             s.map[r][c - 1] = tile;
             s.map[r][c] = Tile.EMPTY;
             this.addAnimation(r, c, r, c - 1, 'fall');
+            this.fallingCells.delete(cellKey);
+            newFalling.add(`${r},${c - 1}`);
             continue;
           }
           // Try roll right
-          if (c < s.cols - 1 && s.map[r][c + 1] === Tile.EMPTY && s.map[r + 1][c + 1] === Tile.EMPTY) {
+          const rightIsPlayer = (r === s.playerRow && c + 1 === s.playerCol);
+          const rightBelowIsPlayer = (r + 1 === s.playerRow && c + 1 === s.playerCol);
+          if (c < s.cols - 1 && s.map[r][c + 1] === Tile.EMPTY && !rightIsPlayer
+              && s.map[r + 1][c + 1] === Tile.EMPTY && !rightBelowIsPlayer) {
             s.map[r][c + 1] = tile;
             s.map[r][c] = Tile.EMPTY;
             this.addAnimation(r, c, r, c + 1, 'fall');
+            this.fallingCells.delete(cellKey);
+            newFalling.add(`${r},${c + 1}`);
             continue;
           }
         }
+
+        // Rock/diamond that was falling has now landed (blocked) — no longer falling
+        this.fallingCells.delete(cellKey);
 
         // Boulder/diamond landing on enemy
         if (below === Tile.SPIDER || below === Tile.MONSTER) {
@@ -266,6 +291,10 @@ export class Engine {
           this.vibrate(50);
         }
       }
+    }
+    // Merge newly falling rocks into the tracking set
+    for (const key of newFalling) {
+      this.fallingCells.add(key);
     }
   }
 
